@@ -44,3 +44,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	printf ("system call!\n");
 	thread_exit ();
 }
+
+/* Check user address validity */
+void
+check_address (const uint64_t *addr) {
+	if (addr == NULL || is_kernel_vaddr(addr) || pml4_get_page (thread_current()->pml4, addr) == NULL) {
+		exit(-1);
+	}
+}
