@@ -512,7 +512,12 @@ priority_preemption (void){
 	if (!list_empty (&ready_list)) {
 		struct thread *top = list_begin (&ready_list);
 		if (sort_by_priority (top, &thread_current ()->elem, NULL)) {
-			thread_yield ();
+			if (intr_context ()) {
+				intr_yield_on_return ();
+			}
+			else {
+				thread_yield ();
+			}
 		}
 	}
 }

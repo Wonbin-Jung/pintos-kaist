@@ -50,6 +50,10 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	/* Extract thread name from file_name */
+	char *save_ptr;
+	strtok_r (file_name, " ", &save_ptr);
+
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
@@ -176,8 +180,26 @@ process_exec (void *f_name) {
 	/* We first kill the current context */
 	process_cleanup ();
 
+	/* Parse argument strings */
+	char *argv[128];
+	char *arg, *save_ptr;
+	int argc = 0;
+
+	arg = strtok_r (file_name, " ", &save_ptr);
+	while (arg != NULL) {
+		argv[argc] = arg;
+		arg = strtok_r (NULL, " ", &save_ptr);
+		argc++;
+	}
+
 	/* And then load the binary */
 	success = load (file_name, &_if);
+
+	/** Push arguments to stack */
+	push_arguments (argv, argc, &_if);
+
+	/* For testing */
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
@@ -204,6 +226,8 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	/* while statement for testing */
+	while (1){}
 	return -1;
 }
 
@@ -255,6 +279,41 @@ process_activate (struct thread *next) {
 
 	/* Set thread's kernel stack for use in processing interrupts. */
 	tss_update (next);
+}
+
+void
+push_arguments (char **argv, int argc, struct intr_frame *if_) {
+	char *word_addr[argc];
+
+	/* Push the words at the top of the stack */
+	for (int i = argc - 1; i >= 0; i--) {
+		if_->rsp -= strlen (argv[i]) + 1;
+		word_addr[i] = if_->rsp;
+		memcpy (if_->rsp, argv[i], strlen (argv[i]) + 1);
+	}
+
+	/* Round the stack pointer down to a multiple of 8 */
+	while (if_->rsp % 8) {
+		if_->rsp -= 1;
+		*(uint8_t *)(if_->rsp) = 0;
+	}
+
+	/* Push null pointer sentinel */
+	if_->rsp -= 8;
+	memset (if_->rsp, 0, sizeof (char *));
+
+	/* Push addresses of each string */
+	for (int i = argc - 1; i >= 0; i--) {
+		if_->rsp -= 8;
+		memcpy (if_->rsp, &word_addr[i], sizeof (char *));
+	}
+
+	/* Push return address */
+	if_->rsp = if_->rsp - 8;
+	memset (if_->rsp, 0, sizeof (void *));
+
+	if_->R.rsi = if_->rsp + 8;
+	if_->R.rdi = argc;
 }
 
 /* We load ELF binaries.  The following definitions are taken
