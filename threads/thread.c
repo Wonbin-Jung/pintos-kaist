@@ -211,6 +211,21 @@ thread_create (const char *name, int priority,
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
 
+#ifdef USERPROG
+	t->exit_status = 0;
+
+	t->fd_table = palloc_get_multiple (PAL_ZERO, FD_PAGE_CNT);
+	if (t->fd_table == NULL) {
+		return TID_ERROR;
+	}
+
+	t->fd_idx = 2;
+	t->fd_table[0] = 0;  /* stdin */
+	t->fd_table[1] = 1;  /* stdout */
+
+	list_push_back (&thread_current ()->child_list, &t->child_elem);
+#endif
+
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	t->tf.rip = (uintptr_t) kernel_thread;
@@ -464,6 +479,12 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->recent_cpu = RECENT_CPU_DEFAULT;
 	t->wait_on_lock = NULL;
 	list_init (&t->donations);
+	
+	t->running_file = NULL;
+	list_init (&t->child_list);
+	sema_init (&t->fork_sema, 0);
+	sema_init (&t->exit_sema, 0);
+	sema_init (&t->wait_sema, 0);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -512,7 +533,12 @@ priority_preemption (void){
 	if (!list_empty (&ready_list)) {
 		struct thread *top = list_begin (&ready_list);
 		if (sort_by_priority (top, &thread_current ()->elem, NULL)) {
-			thread_yield ();
+			if (intr_context ()) {
+				intr_yield_on_return ();
+			}
+			else {
+				thread_yield ();
+			}
 		}
 	}
 }
