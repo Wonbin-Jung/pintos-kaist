@@ -157,32 +157,30 @@ remove (const char *file) {
 	return filesys_remove (file);
 }
 
-
-
 int
-put_file (struct file *file){
-	struct thread *curr=thread_current();
-	struct file **fdt=curr->fd_table;
+put_file (struct file *file) {
+	struct thread *curr = thread_current ();
+	struct file **fdt = curr->fd_table;
 	
-	while(curr->fd_idx<FD_LIMIT && fdt[curr->fd_idx]){
+	while (curr->fd_idx < FD_LIMIT && fdt[curr->fd_idx]) {
 		curr->fd_idx++;
 	}
 
-	if(curr->fd_idx>=FD_LIMIT){
+	if (curr->fd_idx >= FD_LIMIT) {
 		return -1;
 	}
 
-	fdt[curr->fd_idx]=file;
+	fdt[curr->fd_idx] = file;
 	return curr->fd_idx;
 }
 
 static struct file
-*find_with_limits(int fd){
-	struct thread *curr=thread_current();
-	if(fd>=0 && fd<FD_LIMIT){
+*find_with_limits (int fd) {
+	struct thread *curr = thread_current ();
+	if (fd >= 0 && fd < FD_LIMIT) {
 		return curr->fd_table[fd];
 	}
-	else{
+	else {
 		return NULL;
 	}
 }
@@ -190,170 +188,179 @@ static struct file
 int
 open (const char* file) {
 	check_address (file);
-	struct file *opened_file=filesys_open(file);
+	struct file *opened_file = filesys_open (file);
 
-	if(opened_file==NULL) {
+	if (opened_file == NULL) {
 		return -1;
 	}
 	
-	int fd=put_file(opened_file)
+	int fd = put_file (opened_file);
 
-	if(fd==-1){
-		 file_close(opened_file);
+	if (fd == -1) {
+		file_close (opened_file);
 	}
 	return fd;
 }
 
 int
 filesize (int fd) {
-	struct file *current_file=find_with_limits(fd);
-	if(current_file==NULL){
+	struct file *current_file = find_with_limits (fd);
+	if (current_file == NULL) {
 		return -1;
 	}
-	return file_length(current_file);
+	return file_length (current_file);
 }
 
 int
 read (int fd, void *buffer, unsigned length) {
-	check_address(buffer);
+	check_address (buffer);
 
-	struct thread *curr=thread_current();
-	struct file *current_file=find_with_limits(fd);
-	if(current_file==NULL){
+	struct thread *curr = thread_current ();
+	struct file *current_file = find_with_limits (fd);
+	
+	if (current_file == NULL) {
 		return -1;
 	}
-	if(current_file=1){
-		if(curr->stdin_count==0){
-			NOT_REACHED();
-			curr->fd_table[fd]=NULL;
+
+	if (current_file == 1) {
+		if (curr->stdin_count == 0) {
+			NOT_REACHED ();
+			curr->fd_table[fd] = NULL;
 			return -1;
 		}
-		else{
+		else {
 			int i;
-			unsigned char *buf=buffer;
-			for(i=0;i<length;i++){
-				char c=input_getc();
+			unsigned char *buf = buffer;
+			for(i = 0; i < length; i++) {
+				char c = input_getc ();
 				*buf++=c;
-				if(c=='\0'){
+				if (c == '\0') {
 					break;
 				}
 			}
 			return i;
 		}
 	}
-	else if(current_file==2){
+	else if (current_file == 2) {
 		return -1;
 	}
-	else{
-		lock_acquire(&filesys_lock);
-		int ret=file_read(current_file, buffer, size);
-		lock_release(&filesys_lock);
+	else {
+		lock_acquire (&filesys_lock);
+		int ret = file_read (current_file, buffer, length);
+		lock_release (&filesys_lock);
 		return ret;
 	}
 }
 
 int
 write (int fd, const void *buffer, unsigned length) {
-	check_address(buffer);
-	struct file *current_file=find_with_limits(fd);
+	check_address (buffer);
+	struct file *current_file = find_with_limits (fd);
 
-	if(current_file==NULL){
+	if (current_file == NULL) {
 		return -1;
 	}
 
-	struct thread *curr=thread_current();
+	struct thread *curr = thread_current ();
 
-	if(current_file==2){
-		if(curr->stdin_count==0){
-			NOT_REACHED();
-			curr->fd_table[fd]=NULL;
+	if (current_file == 2) {
+		if (curr->stdin_count == 0) {
+			NOT_REACHED ();
+			curr->fd_table[fd] = NULL;
 			return -1;
 		}
-		else{
-			putbuf(buffer, length);
+		else {
+			putbuf (buffer, length);
 			return length;
 		}
 	}
-	else if(current_file=1){
+	else if (current_file == 1) {
 		return -1;
 	}
-	else{
-		lock_acquire(&filesys_lock);
-		int ret=file_write(current_file, buffer, length);
-		lock_release(&filesys_lock);
+	else {
+		lock_acquire (&filesys_lock);
+		int ret = file_write (current_file, buffer, length);
+		lock_release (&filesys_lock);
 		return ret;
 	}
 }
 
 void
 seek (int fd, unsigned position){
-	struct file *current_file=find_with_limits(fd);
-	if(current_file<=2){
+	struct file *current_file = find_with_limits (fd);
+	if (current_file <= 2) {
 		return;
 	}
-	file_seek(current_file, position);
+	file_seek (current_file, position);
 }
 
 unsigned
 tell (int fd) {
-	struct file *current_file=find_with_limits(fd);
-	if (current_file<=2){
+	struct file *current_file = find_with_limits (fd);
+	check_address (current_file);
+
+	if (current_file <= 2){
 		return;
 	}
-	return file_tell(current_file);
+
+	return file_tell (current_file);
 }
 
 void
 close (int fd) {
-	struct file *current_file=thread_current()->fd_table[fd];
-	if (current_file==NULL){
+	struct file *current_file = thread_current ()->fd_table[fd];
+	if (current_file == NULL) {
 		return;
 	}
 
-	struct thread *curr=thread_current();
+	struct thread *curr = thread_current ();
 
-	if(fd==0||current_file=1){
+	if (fd == 0 || current_file == 1) {
 		curr->stdin_count--;
 	}
-	else if(fd==1||current_file=2){
+	else if (fd == 1 || current_file == 2) {
 		curr->stdout_count--;
 	}
 
-	curr->fd_table[fd]=NULL;
+	curr->fd_table[fd] = NULL;
 
-	if(fd<=1||curr<=2){
+	if (fd <= 1 || curr <= 2) {
 		return;
 	}
 
-	if(curr->dup_count==0){
-		file_close(current_file);
+	if (current_file->dup_count == 0) {
+		file_close (current_file);
 	}
-	else{
+	else {
 		current_file->dup_count--;
 	}
 }
 
-int dup2(int oldfd, int newfd){
-	struct file *current_file=find_with_limits(oldfd);
-	if(current_file==NULL){
+int
+dup2 (int oldfd, int newfd) {
+	struct file *current_file = find_with_limits (oldfd);
+	if (current_file == NULL) {
 		return -1;
 	}
-	if(oldfd==newfd){
+
+	if (oldfd == newfd) {
 		return newfd;
 	}
-	struct thread *curr=thread_current();
-	struct file **current_fd_table=curr->fd_table;
-	if(current_file==1){
+
+	struct thread *curr = thread_current();
+	struct file **current_fd_table = curr->fd_table;
+	
+	if (current_file == 1) {
 		curr->stdin_count++;
 	}
-	else if(current_file=2){
+	else if (current_file == 2) {
 		curr->stdout_count++;
 	}
-	else{
+	else {
 		current_file->dup_count++;
 	}
-	close(newfd);
-	current_fd_table[newfd]=current_file;
+	
+	close (newfd);
+	current_fd_table[newfd] = current_file;
 	return newfd;
-
 }
