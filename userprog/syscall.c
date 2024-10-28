@@ -161,8 +161,8 @@ remove (const char *file) {
 
 int
 put_file (struct file *file){
-	struct thread *curr=thread_current;
-	struct file **fdt=curr->fdt;
+	struct thread *curr=thread_current();
+	struct file **fdt=curr->fd_table;
 	
 	while(curr->fd_idx<FD_LIMIT && fdt[curr->fd_idx]){
 		curr->fd_idx++;
@@ -178,7 +178,7 @@ put_file (struct file *file){
 
 static struct file
 *find_with_limits(int fd){
-	struct thread *curr=thread_current;
+	struct thread *curr=thread_current();
 	if(fd>=0 && fd<FD_LIMIT){
 		return curr->fd_table[fd];
 	}
@@ -210,7 +210,7 @@ filesize (int fd) {
 	if(current_file==NULL){
 		return -1;
 	}
-	return file_length(open_file);
+	return file_length(current_file);
 }
 
 int
@@ -312,10 +312,10 @@ close (int fd) {
 
 	struct thread *curr=thread_current();
 
-	if(fd==0||current_file=STDIN){
+	if(fd==0||current_file=1){
 		curr->stdin_count--;
 	}
-	else if(fd==1||current_file=STDOUT){
+	else if(fd==1||current_file=2){
 		curr->stdout_count--;
 	}
 
@@ -334,7 +334,7 @@ close (int fd) {
 }
 
 int dup2(int oldfd, int newfd){
-	struct file *current_file=thread_current()->fd_table[oldfd];
+	struct file *current_file=find_with_limits(oldfd);
 	if(current_file==NULL){
 		return -1;
 	}
@@ -343,10 +343,10 @@ int dup2(int oldfd, int newfd){
 	}
 	struct thread *curr=thread_current();
 	struct file **current_fd_table=curr->fd_table;
-	if(current_file==STDIN){
+	if(current_file==1){
 		curr->stdin_count++;
 	}
-	else if(current_file=STDOUT){
+	else if(current_file=2){
 		curr->stdout_count++;
 	}
 	else{

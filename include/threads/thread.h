@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -104,6 +105,8 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 	struct list_elem mlfqs_elem;		/* List element for MLFQS. */
 
+	int stdin_count;
+	int stdout_count;
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
