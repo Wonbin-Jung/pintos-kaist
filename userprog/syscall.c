@@ -9,6 +9,7 @@
 #include "intrinsic.h"
 #include "userprog/process.h"
 #include "threads/palloc.h"
+#include "filesys/file.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -308,12 +309,11 @@ tell (int fd) {
 
 void
 close (int fd) {
-	struct file *current_file = thread_current ()->fd_table[fd];
+	struct thread *curr = thread_current ();
+	struct file *current_file = curr->fd_table[fd];
 	if (current_file == NULL) {
 		return;
 	}
-
-	struct thread *curr = thread_current ();
 
 	if (fd == 0 || current_file == 1) {
 		curr->stdin_count--;
@@ -324,7 +324,7 @@ close (int fd) {
 
 	curr->fd_table[fd] = NULL;
 
-	if (fd <= 1 || curr <= 2) {
+	if (fd <= 1 || current_file <= 2) {
 		return;
 	}
 
