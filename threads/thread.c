@@ -222,8 +222,8 @@ thread_create (const char *name, int priority,
 	t->fd_idx = 2;
 	t->fd_table[0] = 1;  /* stdin */
 	t->fd_table[1] = 2;  /* stdout */
-	t->stdin_count=1;
-	t->stdout_count=1;
+	t->stdin_count = 1;
+	t->stdout_count = 1;
 
 	list_push_back (&thread_current ()->child_list, &t->child_elem);
 #endif
