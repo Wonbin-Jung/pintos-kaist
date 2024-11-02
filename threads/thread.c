@@ -220,8 +220,8 @@ thread_create (const char *name, int priority,
 	}
 
 	t->fd_idx = 2;
-	t->fd_table[0] = 0;  /* stdin */
-	t->fd_table[1] = 1;  /* stdout */
+	t->fd_table[0] = 1;  /* stdin */
+	t->fd_table[1] = 2;  /* stdout */
 	t->running_file = NULL;
 	t->stdin_count = 1;
 	t->stdout_count = 1;

@@ -186,12 +186,52 @@ __do_fork (void *aux) {
 	if (parent->fd_idx >= FD_LIMIT) {
 		goto error;
 	}
-	
-	for (int i = 2; i < parent->fd_idx; i++) {
-		if (parent->fd_table[i] == NULL) {
-			continue;
+	{
+		int dup_idx = 0;
+		const int dict_len = 128;
+		struct file *keys[dict_len];
+		struct file *vals[dict_len];
+
+		for (int i = 0; i < FD_LIMIT; i++) {
+			struct file *parent_file = parent->fd_table[i];
+			if (parent_file == NULL) {
+				continue;
+			}
+
+			/* Check whether it is a copy of parent */
+			bool is_copy = false;
+
+			for (int j = 0; j <= dup_idx; j++) {
+				if (keys[j] == parent_file) {
+					current->fd_table[i] = vals[j];
+					is_copy = true;
+					break;
+				}
+			}
+
+			if (is_copy) {
+				continue;
+			}
+
+			struct file *current_file;
+
+			if (parent_file > 2) {
+				lock_acquire (&filesys_lock);
+				current_file = file_duplicate (parent_file);
+				lock_release (&filesys_lock);
+			}
+			else {
+				current_file = parent_file;
+			}
+
+			current->fd_table[i] = current_file;
+
+			if (dup_idx < dict_len) {
+				keys[dup_idx] = parent_file;
+				vals[dup_idx] = current_file;
+				dup_idx++;
+			}
 		}
-		current->fd_table[i] = file_duplicate (parent->fd_table[i]);
 	}
 
 	current->fd_idx = parent->fd_idx;
@@ -240,7 +280,7 @@ process_exec (void *f_name) {
 	/* And then load the binary */
 	success = load (file_name, &_if);
 
-	/** Push arguments to stack */
+	/* Push arguments to stack */
 	push_arguments (argv, argc, &_if);
 
 	/* If load failed, quit. */
@@ -384,7 +424,7 @@ struct thread
 	struct list *children = &curr->child_list;
 
 	for (struct list_elem *e = list_begin (children); e != list_end (children); e = list_next (e)) {
-		t = list_entry(e, struct thread, child_elem);
+		t = list_entry (e, struct thread, child_elem);
 
 		if (child_tid == t->tid) {
 			return t;
