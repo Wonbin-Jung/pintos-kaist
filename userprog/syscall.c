@@ -136,7 +136,7 @@ exec (const char *cmd_line) {
 	char *cmd_copy = palloc_get_page (PAL_ZERO);
 
 	if (cmd_copy == NULL) {
-		exit(-1);
+		return -1;
 	}
 
 	strlcpy (cmd_copy, cmd_line, strlen (cmd_line) + 1);
@@ -176,7 +176,6 @@ int
 open (const char* file) {
 	check_address (file);
 
-	lock_acquire (&filesys_lock);
 	struct file *opened_file = filesys_open (file);
 
 	if (opened_file == NULL) {
@@ -188,7 +187,7 @@ open (const char* file) {
 	if (fd == -1) {
 		file_close (opened_file);
 	}
-	lock_release(&filesys_lock);
+
 	return fd;
 }
 
@@ -214,7 +213,6 @@ read (int fd, void *buffer, unsigned length) {
 		return -1;
 	}
 	if (current_file == STDIN) {
-		/* For what? */
 		if (curr->stdin_count == 0) {
 			NOT_REACHED ();
 			delete_file (fd);
