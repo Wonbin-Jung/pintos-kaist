@@ -220,10 +220,15 @@ thread_create (const char *name, int priority,
 	}
 
 	t->fd_idx = 2;
-	t->fd_table[0] = 1;  /* stdin */
-	t->fd_table[1] = 2;  /* stdout */
+	t->fd_table[0] = 0;  /* stdin */
+	t->fd_table[1] = 1;  /* stdout */
+	t->running_file = NULL;
 	t->stdin_count = 1;
 	t->stdout_count = 1;
+
+	sema_init (&t->fork_sema, 0);
+	sema_init (&t->exit_sema, 0);
+	sema_init (&t->wait_sema, 0);
 
 	list_push_back (&thread_current ()->child_list, &t->child_elem);
 #endif
@@ -481,12 +486,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->recent_cpu = RECENT_CPU_DEFAULT;
 	t->wait_on_lock = NULL;
 	list_init (&t->donations);
-	
-	t->running_file = NULL;
+#ifdef USERPROG	
 	list_init (&t->child_list);
-	sema_init (&t->fork_sema, 0);
-	sema_init (&t->exit_sema, 0);
-	sema_init (&t->wait_sema, 0);
+#endif
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

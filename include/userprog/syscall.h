@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <threads/thread.h>
 
+#define STDIN 1
+#define STDOUT 2
+
 void syscall_init (void);
 void check_address (const uint64_t *addr);
 void halt (void);

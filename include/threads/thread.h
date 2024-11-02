@@ -10,8 +10,6 @@
 #include "vm/vm.h"
 #endif
 
-#define USERPROG
-
 /* States in a thread's life cycle. */
 enum thread_status {
 	THREAD_RUNNING,     /* Running thread. */
@@ -104,9 +102,6 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 	struct list_elem mlfqs_elem;		/* List element for MLFQS. */
-
-	int stdin_count;
-	int stdout_count;
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -120,6 +115,8 @@ struct thread {
 	int fd_idx;                         /* File descriptor index */
 	struct file **fd_table;             /* File descriptor table */
 	struct file *running_file;          /* Present running file of thread */
+	int stdin_count;
+	int stdout_count;
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */

@@ -10,6 +10,9 @@
 #include "userprog/process.h"
 #include "threads/palloc.h"
 #include "filesys/file.h"
+#include "filesys/filesys.h"
+#include <list.h>
+#include "threads/vaddr.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -222,8 +225,7 @@ read (int fd, void *buffer, unsigned length) {
 	if (current_file == NULL) {
 		return -1;
 	}
-
-	if (current_file == 1) {
+	if (current_file == STDIN) {
 		if (curr->stdin_count == 0) {
 			NOT_REACHED ();
 			curr->fd_table[fd] = NULL;
@@ -350,10 +352,10 @@ dup2 (int oldfd, int newfd) {
 	struct thread *curr = thread_current();
 	struct file **current_fd_table = curr->fd_table;
 	
-	if (current_file == 1) {
+	if (current_file == STDIN) {
 		curr->stdin_count++;
 	}
-	else if (current_file == 2) {
+	else if (current_file == STDOUT) {
 		curr->stdout_count++;
 	}
 	else {
