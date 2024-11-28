@@ -3,7 +3,11 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "threads/vaddr.h"
+#include "include/userprog/process.h"
 
+struct list frame_table;
+struct list_elem* start;
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -55,6 +59,21 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: should modify the field after calling the uninit_new. */
 
 		/* TODO: Insert the page into the spt. */
+		struct page* newpage=(struct page*)malloc(sizeof(struct page));
+		switch(type){
+			case VM_ANON:
+				uninit_new(newpage, pg_round_down(upage), init, type, aux, anon_initializer);
+				break;
+			case VM_FILE:
+				uninit_new(newpage, pg_round_down(upage), init, type, aux, file_backed_initializer);
+				break;
+			default:
+				NOT_REACHED();
+				break;
+
+		}
+		newpage->writable=writable;
+		return spt_insert_page(spt, newpage);
 	}
 err:
 	return false;
@@ -63,10 +82,17 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
 	/* TODO: Fill this function. */
-
-	return page;
+	struct page *newpage = (struct page*) malloc(sizeof(struct page));
+	newpage->va=pg_round_down(va);
+	struct hash_elem *e=hash_find(&spt->spt_hash, &newpage->hash_elem);
+	free(newpage);
+	if (e==NULL){
+		return NULL;
+	}
+	else{
+		return newpage=hash_entry(e, struct page, hash_elem);
+	}
 }
 
 /* Insert PAGE into spt with validation. */
@@ -75,7 +101,11 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
 	/* TODO: Fill this function. */
-
+	struct hash_elem *e=hash_find(&spt->spt_hash, &page->hash_elem);
+	if (e==NULL){
+		return NULL;
+	}
+	hash_insert (&spt->spt_hash, &page->hash_elem);
 	return succ;
 }
 
@@ -90,7 +120,23 @@ static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
+	struct thread *curr = thread_current();
+	struct list_elem *e=start;
+	for (start = e; start != list_end(&frame_table); start = list_next(start)) {
+        victim = list_entry(start, struct frame, frame_elem);
+        if (pml4_is_accessed(curr->pml4, victim->page->va))
+            pml4_set_accessed (curr->pml4, victim->page->va, 0);
+        else
+            return victim;
+    }
 
+    for (start = list_begin(&frame_table); start != e; start = list_next(start)) {
+        victim = list_entry(start, struct frame, frame_elem);
+        if (pml4_is_accessed(curr->pml4, victim->page->va))
+            pml4_set_accessed (curr->pml4, victim->page->va, 0);
+        else
+            return victim;
+    }
 	return victim;
 }
 
@@ -100,8 +146,8 @@ static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
-
-	return NULL;
+	swap_out(victim->page);
+	return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -115,12 +161,21 @@ vm_get_frame (void) {
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
+	frame->kva=palloc_get_page(PAL_USER);
+	if(frame->kva==NULL){
+		frame=vm_evict_frame();
+		frame->page=NULL;
+		return frame;
+	}
+	list_push_back(&frame_table, &frame->frame_elem);
+	frame->page=NULL;
 	return frame;
 }
 
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
 }
 
 /* Handle the fault on write_protected page */
@@ -136,8 +191,22 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-
-	return vm_do_claim_page (page);
+	if(is_kernel_vaddr(addr) && user){
+		return false;
+	}
+	void *rsp_stack = f->rsp;
+	if(not_present && vm_claim_page(addr)){
+		return true;
+	}
+	else{
+		if(not_present && rsp_stack-sizeof(void*)<= addr && USER_STACK - 0x100000 <= addr && addr <= USER_STACK){
+			vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+			return true;
+		}
+		else{
+			return false;
+		}
+	}
 }
 
 /* Free the page.
@@ -153,8 +222,13 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
-
-	return vm_do_claim_page (page);
+	page = spt_find_page(&thread_current()->spt, va);
+	if (page == NULL) {
+		return false;
+	}
+	else{
+		return vm_do_claim_page (page);
+	}
 }
 
 /* Claim the PAGE and set up the mmu. */
@@ -167,13 +241,29 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
-
+	struct thread *curr=thread_current();
+	pml4_set_page(curr->pml4, page->va, frame->kva, page->writable);
 	return swap_in (page, frame->kva);
+}
+
+unsigned
+page_hash (const struct hash_elem *p_, void *aux UNUSED) {
+    const struct page *p = hash_entry(p_, struct page, hash_elem);
+    return hash_bytes(&p->va, sizeof p->va);
+}
+
+bool
+sort_by_hash_priority (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+	const struct page *hash_a = hash_entry(a, struct page, hash_elem);
+    const struct page *hash_b = hash_entry(b, struct page, hash_elem);
+
+    return (hash_a->va < hash_b->va);
 }
 
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	hash_init(&spt->spt_hash, page_hash, sort_by_hash_priority, NULL);
 }
 
 /* Copy supplemental page table from src to dst */
