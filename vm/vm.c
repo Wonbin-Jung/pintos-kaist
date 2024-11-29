@@ -20,6 +20,7 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_table);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -60,7 +61,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 		/* TODO: Insert the page into the spt. */
 		struct page* newpage=(struct page*)malloc(sizeof(struct page));
-		switch(type){
+		switch(VM_TYPE(type)){
 			case VM_ANON:
 				uninit_new(newpage, pg_round_down(upage), init, type, aux, anon_initializer);
 				break;
@@ -101,11 +102,12 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
 	/* TODO: Fill this function. */
-	struct hash_elem *e=hash_find(&spt->spt_hash, &page->hash_elem);
-	if (e==NULL){
-		return NULL;
+	struct hash_elem *e=hash_insert(&spt->spt_hash, &page->hash_elem);
+	if (e!=NULL){
+		succ=false;
+	}else{
+		succ=true;
 	}
-	hash_insert (&spt->spt_hash, &page->hash_elem);
 	return succ;
 }
 
@@ -158,9 +160,7 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
-
-	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
+	ASSERT ((frame != NULL) || (frame->page == NULL));
 	frame->kva=palloc_get_page(PAL_USER);
 	if(frame->kva==NULL){
 		frame=vm_evict_frame();
@@ -191,20 +191,37 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-	if(is_kernel_vaddr(addr) && user){
+	//There is no address
+	if(addr==NULL){
 		return false;
 	}
-	void *rsp_stack = f->rsp;
-	if(not_present && vm_claim_page(addr)){
-		return true;
+	//The address is kernel page
+	if(is_kernel_vaddr(addr)){
+		return false;
+	}
+	//Is this a physical page?
+	if(not_present==false){
+		return false;
 	}
 	else{
-		if(not_present && rsp_stack-sizeof(void*)<= addr && USER_STACK - 0x100000 <= addr && addr <= USER_STACK){
-			vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+		void *rsp_stack;
+		if(is_kernel_vaddr(f->rsp)){
+			rsp_stack=thread_current()->rsp_stack;
+		}
+		else{
+			rsp_stack=f->rsp;
+		}
+		if(vm_claim_page(addr)){
 			return true;
 		}
 		else{
-			return false;
+			if (rsp_stack-8 <= addr && USER_STACK - (1<<20) <= addr && addr <= USER_STACK){
+				vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+				return true;
+			}
+			else{
+				return false;
+			}
 		}
 	}
 }
@@ -270,6 +287,18 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
+	struct hash_iterator i;
+    hash_first(&i, &src->spt_hash);
+    while (hash_next(&i)){
+		struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem);
+
+	}
+}
+
+void
+kill_the_hash(struct hash_elem *e, void *aux){
+	struct page *page=hash_entry(e, struct page, hash_elem);
+	vm_dealloc_page(page);
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -277,4 +306,5 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	hash_clear(&spt->spt_hash, kill_the_hash);
 }
