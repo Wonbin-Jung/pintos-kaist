@@ -10,6 +10,8 @@
 #include "vm/vm.h"
 #endif
 
+#define USERPROG
+
 /* States in a thread's life cycle. */
 enum thread_status {
 	THREAD_RUNNING,     /* Running thread. */
@@ -18,7 +20,7 @@ enum thread_status {
 	THREAD_DYING        /* About to be destroyed. */
 };
 
-/* Thread identifier type.
+/* Thread identifier type.F
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
@@ -118,6 +120,8 @@ struct thread {
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;
+	void *stack_bottom;
+	void *rsp_stack;
 #endif
 
 	/* Owned by thread.c. */

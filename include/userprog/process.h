@@ -12,4 +12,9 @@ void process_activate (struct thread *next);
 void push_arguments (char **argv, int argc, struct intr_frame *if_);
 struct thread *get_child (int child_tid);
 struct lock filesys_lock;
+struct data_for_lazy_load{
+    struct file *file;
+    off_t offset;
+    size_t page_read_bytes;
+}
 #endif /* userprog/process.h */
