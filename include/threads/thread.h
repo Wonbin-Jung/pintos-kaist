@@ -20,7 +20,7 @@ enum thread_status {
 	THREAD_DYING        /* About to be destroyed. */
 };
 
-/* Thread identifier type.F
+/* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */

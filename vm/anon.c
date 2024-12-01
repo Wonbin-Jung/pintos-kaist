@@ -26,8 +26,8 @@ const size_t SECTORS_PER_PAGE = PGSIZE / DISK_SECTOR_SIZE;
 void
 vm_anon_init (void) {
 	/* TODO: Set up the swap_disk. */
-	swap_disk=disk_get(1, 1);
-	swap_table=bitmap_create(disk_size(swap_disk)/SECTORS_PER_PAGE);
+	swap_disk = disk_get (1, 1);
+	swap_table = bitmap_create (disk_size (swap_disk) / SECTORS_PER_PAGE);
 }
 
 /* Initialize the file mapping */
@@ -35,7 +35,7 @@ bool
 anon_initializer (struct page *page, enum vm_type type, void *kva) {
 	/* Set up the handler */
 	struct uninit_page *uninit = &page->uninit;
-	memset(uninit, 0, sizeof(struct uninit_page));
+	memset (uninit, 0, sizeof (struct uninit_page));
 	page->operations = &anon_ops;
 
 	struct anon_page *anon_page = &page->anon;
@@ -48,13 +48,13 @@ static bool
 anon_swap_in (struct page *page, void *kva) {
 	struct anon_page *anon_page = &page->anon;
 	int page_no = anon_page->swap_index;
-	if (bitmap_test(swap_table, page_no) == false) {
+	if (bitmap_test (swap_table, page_no) == false) {
         return false;
     }
 	for (int i = 0; i < SECTORS_PER_PAGE; ++i) {
-        disk_read(swap_disk, page_no * SECTORS_PER_PAGE + i, kva + DISK_SECTOR_SIZE * i);
+        disk_read (swap_disk, page_no * SECTORS_PER_PAGE + i, kva + DISK_SECTOR_SIZE * i);
     }
-	bitmap_set(swap_table, page_no, false);
+	bitmap_set (swap_table, page_no, false);
     
     return true;
 }
@@ -63,18 +63,18 @@ anon_swap_in (struct page *page, void *kva) {
 static bool
 anon_swap_out (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
-	int swap_slot = bitmap_scan(swap_table, 0, 1, false);
+	int swap_slot = bitmap_scan (swap_table, 0, 1, false);
 
     if (swap_slot == BITMAP_ERROR) {
         return false;
     }
 
 	for (int i = 0; i < SECTORS_PER_PAGE; ++i) {
-        disk_write(swap_disk, swap_slot * SECTORS_PER_PAGE + i, page->va + DISK_SECTOR_SIZE * i);
+        disk_write (swap_disk, swap_slot * SECTORS_PER_PAGE + i, page->va + DISK_SECTOR_SIZE * i);
     }
 
-	bitmap_set(swap_table, swap_slot, true);
-	pml4_clear_page(thread_current()->pml4, page->va);
+	bitmap_set (swap_table, swap_slot, true);
+	pml4_clear_page (thread_current ()->pml4, page->va);
 	anon_page->swap_index = swap_slot;
 	return true;
 }

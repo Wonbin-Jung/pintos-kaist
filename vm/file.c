@@ -33,7 +33,7 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page UNUSED = &page->file;
-	if(page==NULL){
+	if (page == NULL){
 		return false;
 	}
 
@@ -43,11 +43,11 @@ file_backed_swap_in (struct page *page, void *kva) {
 	off_t offset = aux->offset;
 	size_t page_read_bytes = aux->page_read_bytes;
 	size_t page_zero_bytes = PGSIZE - page_read_bytes;
-	file_seek(file, offset);
-	if(file_read(file, kva, page_read_bytes) != (int)page_read_bytes) {
+	file_seek (file, offset);
+	if(file_read (file, kva, page_read_bytes) != (int)page_read_bytes) {
 		return false;
 	}
-	memset(kva + page_read_bytes, 0, page_zero_bytes);
+	memset (kva + page_read_bytes, 0, page_zero_bytes);
 	return true;
 }
 
@@ -55,16 +55,16 @@ file_backed_swap_in (struct page *page, void *kva) {
 static bool
 file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
-	if(page==NULL){
+	if (page == NULL) {
 		return false;
 	}
 	struct container* container = (struct container *)page->uninit.aux;
-	if (pml4_is_dirty(thread_current()->pml4, page->va)){
-		file_write_at(container->file, page->va, container->page_read_bytes, container->offset);
-		pml4_set_dirty(thread_current()->pml4, page->va, 0);
+	if (pml4_is_dirty (thread_current ()->pml4, page->va)){
+		file_write_at (container->file, page->va, container->page_read_bytes, container->offset);
+		pml4_set_dirty (thread_current ()->pml4, page->va, 0);
 	}
 
-	pml4_clear_page(thread_current()->pml4, page->va);
+	pml4_clear_page (thread_current ()->pml4, page->va);
 
 }
 
