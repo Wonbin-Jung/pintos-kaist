@@ -13,6 +13,7 @@
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "vm/vm.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -92,16 +93,24 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_DUP2:
 			f->R.rax = dup2 (f->R.rdi, f->R.rsi);
 			break;
+		case SYS_MMAP:
+			f->R.rax = mmap (f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			break;
+		case SYS_MUNMAP:
+			munmap (f->R.rdi);
+			break;
 		default:
 			exit(-1);
 	}
 }
+
 /* Check user address validty */
-void
-check_address (const uint64_t *addr) {
-	if (addr == NULL || !(is_user_vaddr (addr)) || pml4_get_page (thread_current ()->pml4, addr) == NULL) {
+struct page
+*check_address (const uint64_t *addr) {
+	if (addr == NULL || !(is_user_vaddr (addr))) {
 		exit(-1);
 	}
+	return spt_find_page (&thread_current ()->spt, addr);
 }
 
 /* Turn off the PintOS */
@@ -344,6 +353,72 @@ dup2 (int oldfd, int newfd) {
 
 	fdt[newfd] = old_file;
 	return newfd;
+}
+
+/* Map the mapping from specific length of file to input address */
+void
+*mmap (void *addr, size_t length, int writable, int fd, off_t offset) {
+	if (addr == NULL) {
+		return NULL;
+	}
+
+	if (addr != pg_round_down(addr)) {
+		return NULL;
+	}
+
+	if (is_kernel_vaddr (addr)) {
+		return NULL;
+	}
+
+	if (is_kernel_vaddr (addr + length)) {
+		return NULL;
+	}
+
+	if (offset % PGSIZE != 0) {
+		return NULL;
+	}
+
+	if ((long)length <= 0) {
+		return NULL;
+	}
+
+	struct file *file = find_file (fd);
+
+	if (file == NULL) {
+		return NULL;
+	}
+
+	if (file <= 2) {
+		return NULL;
+	}
+
+	if (file_length (file) == 0) {
+		return NULL;
+	}
+
+	return do_mmap (addr, length, writable, file, offset);
+}
+
+/* Unmaps the mapping for the input address */
+void
+munmap (void *addr) {
+	if (addr == NULL) {
+		return;
+	}
+
+	if (is_kernel_vaddr (addr)) {
+		return;
+	}
+
+	struct page *page = spt_find_page (&thread_current ()->spt, addr);
+
+	if (page == NULL) {
+		return;
+	}
+
+	do_munmap (addr);
+
+	return;
 }
 
 /* Put file into file descriptor table */

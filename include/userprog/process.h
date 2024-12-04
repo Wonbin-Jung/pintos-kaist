@@ -18,4 +18,5 @@ struct data_for_lazy_load {
     off_t offset;
     size_t page_read_bytes;
 };
+static bool lazy_load_segment (struct page *page, void *aux);
 #endif /* userprog/process.h */
