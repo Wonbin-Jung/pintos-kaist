@@ -1,7 +1,12 @@
 #ifndef VM_VM_H
 #define VM_VM_H
 #include <stdbool.h>
+#include <hash.h>
 #include "threads/palloc.h"
+#include "threads/vaddr.h"
+
+#define STACK_LIMIT_SIZE (1 << 20)
+#define STACK_LIMIT (USER_STACK - STACK_LIMIT_SIZE)
 
 enum vm_type {
 	/* page not initialized */
@@ -46,6 +51,8 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	struct hash_elem page_elem;
+	bool writable;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -63,6 +70,7 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+	struct list_elem frame_elem;
 };
 
 /* The function table for page operations.
@@ -85,6 +93,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash spt_hash;
 };
 
 #include "threads/thread.h"
@@ -109,4 +118,9 @@ void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
+unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
+bool sort_by_hash_priority (const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED);
+void destroy_page_hash (struct hash_elem *e, void *aux);
+struct lock swap_lock;
+struct lock eviction_lock;
 #endif  /* VM_VM_H */

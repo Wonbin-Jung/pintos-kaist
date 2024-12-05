@@ -720,6 +720,28 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	bool succ = false;
+	struct lazy_loading_info *lazy_loading_info = (struct lazy_loading_info *)aux;
+	struct file *file = lazy_loading_info->file;
+	off_t ofs = lazy_loading_info->ofs;
+	size_t page_read_bytes = lazy_loading_info->page_read_bytes;
+	size_t page_zero_bytes = lazy_loading_info->page_zero_bytes;
+
+	file_seek (file, ofs);
+
+	if (file_read (file, page->frame->kva, page_read_bytes) == (off_t)page_read_bytes) {
+		memset (page->frame->kva + page_read_bytes, 0, page_zero_bytes);
+		succ = true;
+	}
+	else {
+		//palloc_free_page (page->frame->kva);
+		vm_dealloc_page (page);
+	}
+
+	//file_close (file);
+	//free (aux);
+
+	return succ;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -751,15 +773,27 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
+		struct lazy_loading_info *aux = (struct lazy_loading_info *)malloc (sizeof (struct lazy_loading_info));
+        lock_acquire (&filesys_lock);
+        aux->file = file_reopen (file);
+        lock_release (&filesys_lock);
+		//aux->file = file;
+		aux->ofs = ofs;
+		aux->page_read_bytes = page_read_bytes;
+		aux->page_zero_bytes = page_zero_bytes;
+
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
+					writable, lazy_load_segment, aux)) {
+			file_close (aux->file);
+			free (aux);
 			return false;
+		}
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += PGSIZE;
 	}
 	return true;
 }
@@ -774,6 +808,15 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
+	/* No lazy loading */
+	if (vm_alloc_page (VM_ANON | VM_MARKER_0, stack_bottom, true)) {
+		success = vm_claim_page (stack_bottom);
+
+		if (success) {
+			if_->rsp = USER_STACK;
+			thread_current ()->stack_bottom = stack_bottom;
+		}
+	}
 
 	return success;
 }

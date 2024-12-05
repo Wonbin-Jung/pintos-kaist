@@ -3,12 +3,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <threads/thread.h>
+#include <vm/vm.h>
 
 #define STDIN 1
 #define STDOUT 2
 
 void syscall_init (void);
-void check_address (const uint64_t *addr);
+struct page *check_address (void *addr);
 void halt (void);
 void exit (int status);
 tid_t fork (const char *thread_name, struct intr_frame *f);
@@ -24,6 +25,8 @@ void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
 int dup2 (int oldfd, int newfd);
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap (void *addr);
 
 int put_file (struct file *file);
 static struct file *find_file (int fd);

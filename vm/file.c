@@ -1,6 +1,7 @@
 /* file.c: Implementation of memory backed file object (mmaped object). */
 
 #include "vm/vm.h"
+#include "userprog/process.h"
 
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
@@ -32,27 +33,144 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page UNUSED = &page->file;
+	struct lazy_loading_info *aux = (struct lazy_loading_info *)page->uninit.aux;
+	off_t page_read_bytes = file_read_at (aux->file, page->frame->kva, aux->page_read_bytes, aux->ofs);
+	memset (page->frame->kva + (int)page_read_bytes, 0, PGSIZE - (int)page_read_bytes);
+
+	return true;
 }
 
 /* Swap out the page by writeback contents to the file. */
 static bool
 file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
+	struct frame *frame = page->frame;
+	struct lazy_loading_info *aux = (struct lazy_loading_info *)page->uninit.aux;
+
+	if (pml4_is_dirty (thread_current ()->pml4, page->va)) {
+		file_write_at (aux->file, page->frame->kva, aux->page_read_bytes, aux->ofs);
+		pml4_set_dirty (thread_current ()->pml4, page->va, false);
+	}
+
+	page->frame->page = NULL;
+	page->frame = NULL;
+	pml4_clear_page (thread_current ()->pml4, page->va);
+
+	return true;
 }
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
+
+	struct lazy_loading_info *aux = (struct lazy_loading_info *)page->uninit.aux;
+
+	if (pml4_is_dirty (thread_current ()->pml4, page->va)) {
+		file_write_at (aux->file, page->va, aux->page_read_bytes, aux->ofs);
+		pml4_set_dirty (thread_current ()->pml4, page->va, false);
+	}
+
+	if (page->frame) {
+		list_remove (&page->frame->frame_elem);
+		page->frame->page = NULL;
+		page->frame = NULL;
+		free (page->frame);
+	}
+
+	pml4_clear_page (thread_current ()->pml4, page->va);
 }
 
 /* Do the mmap */
 void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
+	/* Similar with load_segment */
+	lock_acquire (&filesys_lock);
+	struct file *reopen_file = file_reopen (file);
+	void *addr_start = addr;
+	off_t ofs = offset;	
+	size_t read_bytes = (length > file_length (reopen_file)) ? file_length (reopen_file) : length;
+	size_t zero_bytes = PGSIZE - read_bytes % PGSIZE;
+
+	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
+	ASSERT (pg_ofs (addr) == 0);
+	ASSERT (ofs % PGSIZE == 0);
+
+	while (read_bytes > 0 || zero_bytes > 0) {
+		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+		size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+		struct lazy_loading_info *aux = (struct lazy_loading_info *)malloc (sizeof (struct lazy_loading_info));
+		aux->file = reopen_file;
+		aux->ofs = ofs;
+		aux->page_read_bytes = page_read_bytes;
+		aux->page_zero_bytes = page_zero_bytes;
+
+		if (!vm_alloc_page_with_initializer (VM_FILE, addr, 
+				writable, lazy_load_segment, aux)) {
+			file_close (aux->file);
+			free (aux);
+			goto err;
+		}
+
+		read_bytes -= page_read_bytes;
+		zero_bytes -= page_zero_bytes;
+		addr += PGSIZE;
+		offset += PGSIZE;
+	}
+
+	lock_release (&filesys_lock);
+
+	return addr_start;
+
+err:
+	lock_release (&filesys_lock);
+	return NULL;
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
+	struct page *page;
+
+	lock_acquire (&filesys_lock);
+	while ((page = spt_find_page (&thread_current ()->spt, addr))) {
+		if (page) {
+			destroy (page);
+		}
+
+		addr += PGSIZE;
+	}
+	lock_release (&filesys_lock);
+}
+
+/* Lazy loading for MMAP */
+static bool
+lazy_load_segment (struct page *page, void *aux) {
+	/* TODO: Load the segment from the file */
+	/* TODO: This called when the first page fault occurs on address VA. */
+	/* TODO: VA is available when calling this function. */
+	bool succ = false;
+	struct lazy_loading_info *lazy_loading_info = (struct lazy_loading_info *)aux;
+	struct file *file = lazy_loading_info->file;
+	off_t ofs = lazy_loading_info->ofs;
+	size_t page_read_bytes = lazy_loading_info->page_read_bytes;
+	size_t page_zero_bytes = lazy_loading_info->page_zero_bytes;
+
+	file_seek (file, ofs);
+
+	if (file_read (file, page->frame->kva, page_read_bytes) == (off_t)page_read_bytes) {
+		memset (page->frame->kva + page_read_bytes, 0, page_zero_bytes);
+		succ = true;
+	}
+	else {
+		//palloc_free_page (page->frame->kva);
+		vm_dealloc_page (page);
+	}
+
+	file_close (file);
+	free (aux);
+
+	return succ;
 }

@@ -13,6 +13,7 @@
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "vm/vm.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -47,6 +48,9 @@ syscall_init (void) {
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
+	/* Save user rsp when change from user mode to kernel mode */
+	thread_current ()->rsp_save = f->rsp;
+
 	switch (f->R.rax) {
 		case SYS_HALT:
 			halt ();
@@ -92,16 +96,25 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_DUP2:
 			f->R.rax = dup2 (f->R.rdi, f->R.rsi);
 			break;
+		case SYS_MMAP:
+			f->R.rax = mmap (f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+			break;
+		case SYS_MUNMAP:
+			munmap (f->R.rdi);
+			break;
 		default:
 			exit(-1);
 	}
 }
 /* Check user address validty */
-void
-check_address (const uint64_t *addr) {
-	if (addr == NULL || !(is_user_vaddr (addr)) || pml4_get_page (thread_current ()->pml4, addr) == NULL) {
+struct page
+*check_address(void *addr) {
+	struct page *page = spt_find_page (&thread_current ()->spt, addr);
+
+	if (addr == NULL || !(is_user_vaddr (addr)) || page == NULL)
 		exit(-1);
-	}
+
+	return page;
 }
 
 /* Turn off the PintOS */
@@ -211,6 +224,13 @@ read (int fd, void *buffer, unsigned length) {
 	check_address (buffer);
 
 	struct thread *curr = thread_current ();
+
+	/* Check writable */
+	struct page *page = spt_find_page (&thread_current ()->spt, buffer);
+	if (page && !page->writable) {
+		exit(-1);
+	}
+
 	struct file *current_file = find_file (fd);
 
 	if (current_file == NULL) {
@@ -344,6 +364,51 @@ dup2 (int oldfd, int newfd) {
 
 	fdt[newfd] = old_file;
 	return newfd;
+}
+
+/* Map file-backed page */
+void
+*mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+	if (addr == NULL) {
+		return NULL;
+	}
+
+	if (addr != pg_round_down (addr)) {
+		return NULL;
+	}
+
+	if (is_kernel_vaddr (addr) || is_kernel_vaddr (addr + length)) {
+		return NULL;
+	}
+
+	if (offset != pg_round_down (offset)) {
+		return NULL;
+	}
+
+	if (offset % PGSIZE != 0) {
+		return NULL;
+	}
+
+	if (spt_find_page (&thread_current ()->spt, addr)) {
+		return NULL;
+	}
+
+	struct file *file = find_file (fd);
+
+	if (file == NULL || file == STDIN || file == STDOUT) {
+		return NULL;
+	}
+
+	if (file_length (file) == 0 || (long)length <= 0) {
+		return NULL;
+	}
+
+	return do_mmap (addr, length, writable, file, offset);
+}
+
+/* Unmap file-backed page */
+void munmap(void *addr) {
+	do_munmap(addr);
 }
 
 /* Put file into file descriptor table */
