@@ -4,7 +4,6 @@
 #include "devices/disk.h"
 #include "threads/vaddr.h"
 #include <bitmap.h>
-#define SECTOR_PER_PAGE (PGSIZE / DISK_SECTOR_SIZE)
 static struct bitmap *swap_bitmap;
 
 /* DO NOT MODIFY BELOW LINE */
@@ -26,7 +25,7 @@ void
 vm_anon_init (void) {
 	/* TODO: Set up the swap_disk. */
 	swap_disk = disk_get(1, 1);
-	swap_bitmap = bitmap_create (disk_size (swap_disk) / SECTOR_PER_PAGE);
+	swap_bitmap = bitmap_create (disk_size (swap_disk) / PAGE_SECTORS);
 	lock_init (&swap_lock);
 }
 
@@ -59,8 +58,8 @@ anon_swap_in (struct page *page, void *kva) {
 		return false;
 	}
 
-	for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
-		disk_read (swap_disk, (anon_page->swap_index * SECTOR_PER_PAGE) + i, kva + (i * DISK_SECTOR_SIZE));
+	for (size_t i = 0; i < PAGE_SECTORS; i++) {
+		disk_read (swap_disk, (anon_page->swap_index * PAGE_SECTORS) + i, kva + (i * DISK_SECTOR_SIZE));
 	}
 
 	bitmap_set (swap_bitmap, anon_page->swap_index, false);
@@ -82,8 +81,8 @@ anon_swap_out (struct page *page) {
 		return false;
 	}
 
-	for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
-		disk_write (swap_disk, (swap_index * SECTOR_PER_PAGE) + i, page->va + (i * DISK_SECTOR_SIZE));
+	for (size_t i = 0; i < PAGE_SECTORS; i++) {
+		disk_write (swap_disk, (swap_index * PAGE_SECTORS) + i, page->va + (i * DISK_SECTOR_SIZE));
 	}
 
 	anon_page->swap_index = swap_index;
@@ -98,15 +97,15 @@ static void
 anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
 	if (anon_page->swap_index != BITMAP_ERROR) {
-        bitmap_reset (swap_bitmap, anon_page->swap_index);
+		bitmap_reset (swap_bitmap, anon_page->swap_index);
 	}
 
-    if (page->frame) {
+	if (page->frame) {
 		lock_acquire (&swap_lock);
-        list_remove (&page->frame->frame_elem);
+		list_remove (&page->frame->frame_elem);
 		lock_release (&swap_lock);
-        page->frame->page = NULL;
-        free (page->frame);
-        page->frame = NULL;
-    }
+		page->frame->page = NULL;
+		free (page->frame);
+		page->frame = NULL;
+	}
 }

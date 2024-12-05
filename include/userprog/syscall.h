@@ -10,6 +10,7 @@
 
 void syscall_init (void);
 struct page *check_address (void *addr);
+void check_pages (void *buffer, size_t length, bool write);
 void halt (void);
 void exit (int status);
 tid_t fork (const char *thread_name, struct intr_frame *f);

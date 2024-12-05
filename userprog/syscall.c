@@ -106,9 +106,10 @@ syscall_handler (struct intr_frame *f UNUSED) {
 			exit(-1);
 	}
 }
-/* Check user address validty */
+
+/* Check page user address validty */
 struct page
-*check_address(void *addr) {
+*check_address (void *addr) {
 	struct page *page = spt_find_page (&thread_current ()->spt, addr);
 
 	if (addr == NULL || !(is_user_vaddr (addr)) || page == NULL)
@@ -225,8 +226,9 @@ read (int fd, void *buffer, unsigned length) {
 
 	struct thread *curr = thread_current ();
 
-	/* Check writable */
+	/* Check page validity */
 	struct page *page = spt_find_page (&thread_current ()->spt, buffer);
+
 	if (page && !page->writable) {
 		exit(-1);
 	}
@@ -408,6 +410,20 @@ void
 
 /* Unmap file-backed page */
 void munmap(void *addr) {
+	if (addr == NULL) {
+		return;
+	}
+
+	if (is_kernel_vaddr (addr)) {
+		return;
+	}
+
+	struct page *page = spt_find_page (&thread_current ()->spt, addr);
+
+	if (page == NULL) {
+		return;
+	}
+
 	do_munmap(addr);
 }
 

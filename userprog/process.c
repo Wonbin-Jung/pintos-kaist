@@ -729,12 +729,12 @@ lazy_load_segment (struct page *page, void *aux) {
 
 	file_seek (file, ofs);
 
+	/* Check file byte length */
 	if (file_read (file, page->frame->kva, page_read_bytes) == (off_t)page_read_bytes) {
 		memset (page->frame->kva + page_read_bytes, 0, page_zero_bytes);
 		succ = true;
 	}
 	else {
-		//palloc_free_page (page->frame->kva);
 		vm_dealloc_page (page);
 	}
 
@@ -771,20 +771,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
 		struct lazy_loading_info *aux = (struct lazy_loading_info *)malloc (sizeof (struct lazy_loading_info));
-        lock_acquire (&filesys_lock);
-        aux->file = file_reopen (file);
-        lock_release (&filesys_lock);
-		//aux->file = file;
+		lock_acquire (&filesys_lock);
+		aux->file = file_reopen (file);
+		lock_release (&filesys_lock);
 		aux->ofs = ofs;
 		aux->page_read_bytes = page_read_bytes;
 		aux->page_zero_bytes = page_zero_bytes;
 
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux)) {
-			//file_close (aux->file);
-			//free (aux);
+					writable, lazy_load_segment, aux))
 			return false;
-		}
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;

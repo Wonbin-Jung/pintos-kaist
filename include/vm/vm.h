@@ -7,6 +7,7 @@
 
 #define STACK_LIMIT_SIZE (1 << 20)
 #define STACK_LIMIT (USER_STACK - STACK_LIMIT_SIZE)
+#define PAGE_SECTORS (PGSIZE / DISK_SECTOR_SIZE)
 
 enum vm_type {
 	/* page not initialized */

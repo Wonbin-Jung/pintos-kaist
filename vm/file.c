@@ -33,6 +33,11 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page UNUSED = &page->file;
+
+	if (page == NULL) {
+		return false;
+	}
+
 	struct lazy_loading_info *aux = (struct lazy_loading_info *)page->uninit.aux;
 	off_t page_read_bytes = file_read_at (aux->file, page->frame->kva, aux->page_read_bytes, aux->ofs);
 	memset (page->frame->kva + (int)page_read_bytes, 0, PGSIZE - (int)page_read_bytes);
@@ -44,6 +49,11 @@ file_backed_swap_in (struct page *page, void *kva) {
 static bool
 file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
+
+	if (page == NULL) {
+		return false;
+	}
+
 	struct frame *frame = page->frame;
 	struct lazy_loading_info *aux = (struct lazy_loading_info *)page->uninit.aux;
 
@@ -63,7 +73,6 @@ file_backed_swap_out (struct page *page) {
 static void
 file_backed_destroy (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
-
 	struct lazy_loading_info *aux = (struct lazy_loading_info *)page->uninit.aux;
 
 	if (pml4_is_dirty (thread_current ()->pml4, page->va)) {
@@ -85,13 +94,13 @@ file_backed_destroy (struct page *page) {
 void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
-	/* Similar with load_segment */
+	/* Similar with load_segment() */
 	lock_acquire (&filesys_lock);
 	struct file *reopen_file = file_reopen (file);
 	void *addr_start = addr;
-	off_t ofs = offset;	
+	off_t ofs = offset;
 	size_t read_bytes = (length > file_length (reopen_file)) ? file_length (reopen_file) : length;
-	size_t zero_bytes = PGSIZE - read_bytes % PGSIZE;
+	size_t zero_bytes = PGSIZE - (read_bytes % PGSIZE);
 
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (addr) == 0);
@@ -108,10 +117,9 @@ do_mmap (void *addr, size_t length, int writable,
 		aux->page_zero_bytes = page_zero_bytes;
 
 		if (!vm_alloc_page_with_initializer (VM_FILE, addr, 
-				writable, lazy_load_segment, aux)) {
-			//file_close (aux->file);
-			//free (aux);
-			goto err;
+				writable, mmap_lazy_load_segment, aux)) {
+			lock_release (&filesys_lock);
+			return NULL;
 		}
 
 		read_bytes -= page_read_bytes;
@@ -123,10 +131,6 @@ do_mmap (void *addr, size_t length, int writable,
 	lock_release (&filesys_lock);
 
 	return addr_start;
-
-err:
-	lock_release (&filesys_lock);
-	return NULL;
 }
 
 /* Do the munmap */
@@ -147,10 +151,7 @@ do_munmap (void *addr) {
 
 /* Lazy loading for MMAP */
 static bool
-lazy_load_segment (struct page *page, void *aux) {
-	/* TODO: Load the segment from the file */
-	/* TODO: This called when the first page fault occurs on address VA. */
-	/* TODO: VA is available when calling this function. */
+mmap_lazy_load_segment (struct page *page, void *aux) {
 	bool succ = false;
 	struct lazy_loading_info *lazy_loading_info = (struct lazy_loading_info *)aux;
 	struct file *file = lazy_loading_info->file;
@@ -165,12 +166,8 @@ lazy_load_segment (struct page *page, void *aux) {
 		succ = true;
 	}
 	else {
-		//palloc_free_page (page->frame->kva);
 		vm_dealloc_page (page);
 	}
-
-	//file_close (file);
-	//free (aux);
 
 	return succ;
 }

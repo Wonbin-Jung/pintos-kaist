@@ -7,7 +7,6 @@
 #include "threads/mmu.h"
 
 struct list frame_table;
-struct list_elem *e = NULL;
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -62,27 +61,27 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: should modify the field after calling the uninit_new. */
 
 		/* TODO: Insert the page into the spt. */
-		struct page* page = (struct page*)malloc (sizeof (struct page));
+		struct page* new_page = (struct page*)malloc (sizeof (struct page));
 
-		if (page == NULL) {
+		if (new_page == NULL) {
 			goto err;
 		}
 
 		switch (VM_TYPE (type)) {
 			case VM_ANON:
-				uninit_new (page, pg_round_down (upage), init, type, aux, anon_initializer);
+				uninit_new (new_page, pg_round_down (upage), init, type, aux, anon_initializer);
 				break;
 			case VM_FILE:
-				uninit_new (page, pg_round_down (upage), init, type, aux, file_backed_initializer);
+				uninit_new (new_page, pg_round_down (upage), init, type, aux, file_backed_initializer);
 				break;
 			default:
 				NOT_REACHED ();
 				break;
 		}
 
-		page->writable = writable;
+		new_page->writable = writable;
 
-		return spt_insert_page (spt, page);
+		return spt_insert_page (spt, new_page);
 	}
 err:
 	return false;
@@ -122,7 +121,6 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
-	hash_delete (&spt->spt_hash, &page->page_elem);
 	vm_dealloc_page (page);
 	return true;
 }
@@ -132,17 +130,21 @@ static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
+	struct list_elem *e;
 	lock_acquire (&eviction_lock);
 	for (e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e)) {
 		victim = list_entry (e, struct frame, frame_elem);
+
 		if (pml4_is_accessed (thread_current ()->pml4, victim->page->va)) {
 			pml4_set_accessed (thread_current ()->pml4, victim->page->va, false);
 		}
 		else {
 			lock_release (&eviction_lock);
+
 			return victim;
 		}
 	}
+
 	lock_release (&eviction_lock);
 
 	return victim;
@@ -173,12 +175,13 @@ vm_get_frame (void) {
 
 	ASSERT (frame != NULL);
 
-	frame->kva = palloc_get_page (PAL_USER | PAL_ZERO);
+	void *kva = palloc_get_page (PAL_USER | PAL_ZERO);
 
-	if (frame->kva == NULL) {
+	if (kva == NULL) {
 		frame = vm_evict_frame ();
 	}
-	else {		
+	else {
+		frame->kva = kva;
 		list_push_back (&frame_table, &frame->frame_elem);
 	}
 
@@ -204,6 +207,7 @@ vm_stack_growth (void *addr UNUSED) {
 /* Handle the fault on write_protected page */
 static bool
 vm_handle_wp (struct page *page UNUSED) {
+	/* Extra! */
 }
 
 /* Return true on success */
@@ -244,7 +248,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 
 		/* x86-64 PUSH instruction */
 		rsp = rsp - 8;
-		if (STACK_LIMIT <= rsp && rsp == addr && addr <= USER_STACK) {
+		if (STACK_LIMIT <= rsp && rsp <= addr && addr <= USER_STACK) {
 			vm_stack_growth (addr);
 			return true;
 		}
@@ -281,8 +285,9 @@ vm_claim_page (void *va UNUSED) {
 	if (page == NULL) {
 		return false;
 	}
-
-	return vm_do_claim_page (page);
+	else {
+		return vm_do_claim_page (page);
+	}
 }
 
 /* Claim the PAGE and set up the mmu. */
@@ -317,32 +322,37 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 	
 	while (hash_next (&i)) {
 		struct page *src_page = hash_entry (hash_cur (&i), struct page, page_elem);
+		struct page *dst_page;
 		enum vm_type type = src_page->operations->type;
 
-		if (type == VM_UNINIT) {
-			vm_alloc_page_with_initializer (page_get_type (src_page), src_page->va, src_page->writable, src_page->uninit.init, src_page->uninit.aux);
-		}
-		else if (type == VM_FILE) {
-			if (!vm_alloc_page_with_initializer(type, src_page->va, src_page->writable, NULL, src_page->uninit.aux)) {
-				return false;
-			}
+		switch (type) {
+			case VM_UNINIT:
+				vm_alloc_page_with_initializer (src_page->uninit.type, src_page->va, src_page->writable, src_page->uninit.init, src_page->uninit.aux);
+				break;
+			case VM_FILE:
+				if (!vm_alloc_page_with_initializer (type, src_page->va, src_page->writable, NULL, src_page->uninit.aux)) {
+					return false;
+				}
 
-			struct page *dst_page = spt_find_page (dst, src_page->va);
-			file_backed_initializer (dst_page, type, NULL);
-			dst_page->frame = src_page->frame;
-			pml4_set_page (thread_current ()->pml4, dst_page->va, src_page->frame->kva, src_page->writable);
-		}
-		else {
-			if (!vm_alloc_page (type, src_page->va, src_page->writable)) {
-				return false;
-			}
+				dst_page = spt_find_page (dst, src_page->va);
+				file_backed_initializer (dst_page, type, NULL);
+				dst_page->frame = src_page->frame;
+				pml4_set_page (thread_current ()->pml4, dst_page->va, src_page->frame->kva, src_page->writable);
+				break;
+			case VM_ANON:
+				if (!vm_alloc_page_with_initializer (type, src_page->va, src_page->writable, NULL, NULL)) {
+					return false;
+				}
 
-			if (!vm_claim_page (src_page->va)) {
-				return false;
-			}
+				if (!vm_claim_page (src_page->va)) {
+					return false;
+				}
 
-			struct page *dst_page = spt_find_page (dst, src_page->va); 
-			memcpy (dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+				dst_page = spt_find_page (dst, src_page->va);
+				memcpy (dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -378,7 +388,5 @@ sort_by_hash_priority (const struct hash_elem *a, const struct hash_elem *b, voi
 void
 destroy_page_hash (struct hash_elem *e, void *aux) {
 	struct page *page = hash_entry (e, struct page, page_elem);
-
-	destroy (page);
-	free (page);
+	vm_dealloc_page (page);
 }
