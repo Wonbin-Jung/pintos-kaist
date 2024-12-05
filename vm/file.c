@@ -109,8 +109,8 @@ do_mmap (void *addr, size_t length, int writable,
 
 		if (!vm_alloc_page_with_initializer (VM_FILE, addr, 
 				writable, lazy_load_segment, aux)) {
-			file_close (aux->file);
-			free (aux);
+			//file_close (aux->file);
+			//free (aux);
 			goto err;
 		}
 
@@ -169,8 +169,8 @@ lazy_load_segment (struct page *page, void *aux) {
 		vm_dealloc_page (page);
 	}
 
-	file_close (file);
-	free (aux);
+	//file_close (file);
+	//free (aux);
 
 	return succ;
 }

@@ -738,9 +738,6 @@ lazy_load_segment (struct page *page, void *aux) {
 		vm_dealloc_page (page);
 	}
 
-	//file_close (file);
-	//free (aux);
-
 	return succ;
 }
 
@@ -784,8 +781,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
 					writable, lazy_load_segment, aux)) {
-			file_close (aux->file);
-			free (aux);
+			//file_close (aux->file);
+			//free (aux);
 			return false;
 		}
 
